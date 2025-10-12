@@ -2,14 +2,37 @@ unsigned long startMillis;
 int hora, minuto;
 int dia, mes, max;
 int humedad1min, humedad1max, humedad2min, humedad2max, humedad3min, humedad3max;
+int sensor1, sensor2, sensor3;
+int dib_s1, dib_s2, dib_s3;
+int horaI_s1, horaF_s1, minutoI_s1, minutoF_s1;
+int horaI_s2, horaF_s2, minutoI_s2, minutoF_s2;
+int horaI_s3, horaF_s3, minutoI_s3, minutoF_s3;
+
 bool horaConfigurada = false;
-bool dummy_mes, dummy_dia, dummy_hora, dummy_minuto = true;
+
+bool dummy_mes = true;
+bool dummy_dia = true;
+bool dummy_hora = true;
+bool dummy_minuto = true;
+
+bool dummy_humedad_min1 = true; 
+bool dummy_humedad_max1 = true;
+bool dummy_humedad_min2 = true; 
+bool dummy_humedad_max2 = true;
+bool dummy_humedad_min3 = true; 
+bool dummy_humedad_max3 = true;
+
+bool dummy_sensor1 = true;
+bool dummy_sensor2 = true;
+bool dummy_sensor3 = true;
+
+bool dummy_dib_s1 = true;
+bool dummy_dib_s2 = true;
+bool dummy_dib_s3 = true;
+
 bool dummy_dia1a, dummy_hora1a, dummy_minuto1a, dummy_dia1b, dummy_hora1b, dummy_minuto1b = true;
 bool dummy_dia2a, dummy_hora2a, dummy_minuto2a, dummy_dia2b, dummy_hora2b, dummy_minuto2b = true;
 bool dummy_dia3a, dummy_hora3a, dummy_minuto3a, dummy_dia3b, dummy_hora3b, dummy_minuto3b = true;
-bool dummy_humedad_min1, dummy_humedad_max1 = true;
-bool dummy_humedad_min2, dummy_humedad_max2 = true;
-bool dummy_humedad_min3, dummy_humedad_max3 = true;
 bool dummy_lluvia = true;
 
 void setup() {
@@ -32,6 +55,7 @@ void loop() {
         mes = mes_prueba;
         dummy_mes = false;
         Serial.println("Mes guardado correctamente");
+        Serial.println();
         switch (mes) {
           case 1: case 3: case 5: case 7: case 8: case 10: case 12: max = 32; break;
           case 2: max = 29; break;
@@ -56,6 +80,7 @@ void loop() {
         dia = dia_prueba;
         dummy_dia = false;
         Serial.println("Día guardado correctamente");
+        Serial.println();
         Serial.println("Ingrese la hora");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -78,6 +103,7 @@ void loop() {
         hora = hora_prueba;
         dummy_hora = false;
         Serial.println("Hora guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese los minutos");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -97,6 +123,9 @@ void loop() {
         minuto = minuto_prueba;
         dummy_minuto = false;
         Serial.println("Minutos guardados correctamente");
+        Serial.println();
+        Serial.println();
+        Serial.println();
         horaConfigurada = true;
         startMillis = millis();
         Serial.println("Ingrese la humedad mínima del sensor 1");
@@ -124,6 +153,7 @@ void loop() {
         humedad1min = humedad1A;
         dummy_humedad_min1 = false;
         Serial.println("Humedad mínima del sensor 1 guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese la humedad máxima del sensor 1");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -140,6 +170,7 @@ void loop() {
         humedad1max = humedad1B;
         dummy_humedad_max1 = false;
         Serial.println("Humedad máxima del sensor 1 guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese la humedad mínima del sensor 2");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -159,6 +190,7 @@ void loop() {
         humedad2min = humedad2A;
         dummy_humedad_min2 = false;
         Serial.println("Humedad mínima del sensor 2 guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese la humedad máxima del sensor 2");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -175,6 +207,7 @@ void loop() {
         humedad2max = humedad2B;
         dummy_humedad_max2 = false;
         Serial.println("Humedad máxima del sensor 2 guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese la humedad mínima del sensor 3");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -194,6 +227,7 @@ void loop() {
         humedad3min = humedad3A;
         dummy_humedad_min3 = false;
         Serial.println("Humedad mínima del sensor 3 guardada correctamente");
+        Serial.println();
         Serial.println("Ingrese la humedad máxima del sensor 3");
         String entrada = Serial.readStringUntil('\n');
         return;
@@ -210,6 +244,7 @@ void loop() {
         humedad3max = humedad3B;
         dummy_humedad_max3 = false;
         Serial.println("Humedad máxima del sensor 3 guardada correctamente");
+        Serial.println();
         Serial.println("Gracias por ingresar todos los datos necesarios :)");
         String entrada = Serial.readStringUntil('\n');
         return;
