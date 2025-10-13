@@ -1,37 +1,43 @@
 import requests
 import serial
 import time
+from datetime import datetime, timezone, timedelta
 
 #-------> Clase para obtener datos del clima 
 class climaAPI: 
     def __init__(self, apiKey):
         self.apiKey = apiKey
         #la latitud y longitud son los datos de Cartago -> se solicita la probabilidad de lluvia de ahí 
-        self.latitud = 9.8644 
-        self.longitud = -83.9194
-        self.url = f"http://api.openweathermap.org/data/2.5/weather?lat={self.latitud}&lon={self.longitud}&appid={self.apiKey}&units=metric"
+        self.latitud = 9.8667 
+        self.longitud = -83.9167
+        self.url = f'https://api.weatherbit.io/v2.0/forecast/daily?lat={self.latitud}&lon={self.longitud}&key={self.apiKey}&days=1'
 
 
     
     def obtenerClima(self):
-        respuesta = requests.get(self.url)
-        if respuesta.status_code == 200:
+        try:
+            respuesta = requests.get(self.url)
+            if respuesta.status_code != 200:
+                print("Error al obtener datos:", respuesta.status_code)
+                return None
+
             datos = respuesta.json()
-           #Revisar si existe lluvia
-            lluvia = datos.get("rain", {})
-            #la lluvia en la última hora si existe, si no, 0
-            mm_lluvia = lluvia.get("1h", 0)
-            # Estimar probabilidad: 0 mm -> 0%, >0 mm -> 80-100%
-            if mm_lluvia == 0:
-                probabilidad = 0
-            elif mm_lluvia < 5:
-                probabilidad = 80
-            else:
-                probabilidad = 100
+            if 'data' not in datos or len(datos['data']) == 0:
+                print("No hay datos disponibles.")
+                return None
+
+            # Extraer probabilidad de lluvia (pop) del primer día
+            probabilidad = datos['data'][0].get('pop', 0)
+            # lluvia total esperada en mm de lluvia
+            mm_total = datos['data'][0].get('precip', 0)
+
+            print(f"Probabilidad de lluvia hoy: {probabilidad}%, lluvia total estimada: {mm_total} mm")
             return probabilidad
-        else:
-            print("Error al obtener datos:", respuesta.status_code)
+
+        except Exception as e:
+            print("Error al consultar Weatherbit:", e)
             return None
+            
         
 #-------> Clase para manejar conexión con el Arduino
 class conexionArduino: 
@@ -68,7 +74,7 @@ class probLluviaParaArduino:
 if __name__ == "__main__":
     
     #DESCOMENTAR LO DE PUERTOARDUINO Y SISTEMA PARA EJECUTAR LA TRANSMISIÓN DE DATOS
-    CLAVEAPI = "fe04d12cf37b177359ff855076fda4e4" #la key para solicitar los datos, no tocar
+    CLAVEAPI = "0816e9b97867497691f44dea8f7263a6" #la key para solicitar los datos, no tocar
     #PUERTOARDUINO = poner el puerto del arduino aquí y descomentar 
     
     #sistema = probLluviaParaArduino(CLAVEAPI, PUERTOARDUINO)
