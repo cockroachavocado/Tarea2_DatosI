@@ -1,259 +1,364 @@
-unsigned long startMillis;
-int hora, minuto;
-int dia, mes, max;
-int humedad1min, humedad1max, humedad2min, humedad2max, humedad3min, humedad3max;
-int sensor1, sensor2, sensor3;
-int dib_s1, dib_s2, dib_s3;
-int horaI_s1, horaF_s1, minutoI_s1, minutoF_s1;
-int horaI_s2, horaF_s2, minutoI_s2, minutoF_s2;
-int horaI_s3, horaF_s3, minutoI_s3, minutoF_s3;
 
-bool horaConfigurada = false;
+// Clase para los sensores
+class SensorHumedad {
+  int pin;
+  int humedadMin;
+  int humedadMax;
+  int valorActual;
 
-bool dummy_mes = true;
-bool dummy_dia = true;
-bool dummy_hora = true;
-bool dummy_minuto = true;
+  // para la configuración de riego
+  bool apagado;
+  int cadaCuantosDias;
+  int horaInicio;
+  int minutosInicio;
+  int horaFinal;
+  int minutosFinal;
+  
+  // no sé qué significa esto xd, parece ser una referencia de último riego
+  unsigned long ultimoRiego;
 
-bool dummy_humedad_min1 = true; 
-bool dummy_humedad_max1 = true;
-bool dummy_humedad_min2 = true; 
-bool dummy_humedad_max2 = true;
-bool dummy_humedad_min3 = true; 
-bool dummy_humedad_max3 = true;
+public:
+  SensorHumedad(int pinSensor = A0) {
+    pin = pinSensor;
+    humedadMin = 0;
+    humedadMax = 100;
+    valorActual = 0;
+  }
 
-bool dummy_sensor1 = true;
-bool dummy_sensor2 = true;
-bool dummy_sensor3 = true;
+  void configurarRangos(int minH, int maxH) {
+    humedadMin = minH;
+    humedadMax = maxH;
+  }
 
-bool dummy_dib_s1 = true;
-bool dummy_dib_s2 = true;
-bool dummy_dib_s3 = true;
+  void configurarRiego(bool a, int d, int h1, int h2, int m1, int m2) {
+    apagado = a;
+    cadaCuantosDias = d;
+    horaInicio = h1;
+    horaFinal = h2;
+    minutosInicio = m1;
+    minutosFinal = m2;
+  }
 
-bool dummy_dia1a, dummy_hora1a, dummy_minuto1a, dummy_dia1b, dummy_hora1b, dummy_minuto1b = true;
-bool dummy_dia2a, dummy_hora2a, dummy_minuto2a, dummy_dia2b, dummy_hora2b, dummy_minuto2b = true;
-bool dummy_dia3a, dummy_hora3a, dummy_minuto3a, dummy_dia3b, dummy_hora3b, dummy_minuto3b = true;
-bool dummy_lluvia = true;
+  void leer() {
+    valorActual = analogRead(pin);
+    // Se covnierte la lectura (0-1023) a porcentaje (0-100)
+    valorActual = map(valorActual, 0, 1023, 100, 0);
+  }
+
+  int leerHumedad() { return valorActual; }
+
+  bool necesitaRiego() {
+    return valorActual < humedadMin;
+  }
+
+  bool excesoHumedad() {
+    return valorActual >= humedadMax;
+  }
+
+  bool tocaRegar(int hora, int minutos, int dia) {
+    if (apagado) return false;
+    if ((dia - ultimoRiego) % cadaCuantosDias != 0) return false;
+
+    //compara la hora actual con un rango programado
+    if (hora > horaInicio || (hora == horaInicio && minutos >= minutosInicio)) {
+      if (hora < horaFinal || (hora == horaFinal && minutos <= minutosFinal)) {
+        if (necesitaRiego()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void registrarRiego(int dia) {
+    ultimoRiego = dia;
+  }
+
+  void imprimirInfo(int id) {
+    Serial.print("Zona ");
+    Serial.print(id);
+    Serial.print(": ");
+    Serial.print(valorActual);
+    Serial.println("% | Rango: ");
+    Serial.print(humedadMin);
+    Serial.print("-");
+    Serial.print(humedadMax);
+    Serial.println("%");
+  }
+};
+
+// Clase del sistema como tal
+class Sistema {
+  SensorHumedad zonas[3];
+  int pinBomba;
+  int hora;
+  int minuto;
+  int dias;
+  unsigned long tiempoAnterior;
+
+public:
+  Sistema(int p, int a, int b, int c) 
+    : pinBomba(p), 
+      zonas{SensorHumedad(a), SensorHumedad(b), SensorHumedad(c)} {
+    hora = 0;
+    minuto = 0;
+    dias = 0;
+    tiempoAnterior = millis();
+  }
+
+  // Configuración de la hora
+  void configurarHora(int h, int m) {
+    hora = h;
+    minuto = m;
+  }
+
+  void actualizarHora() {
+    unsigned long ahora = millis();
+
+    // Cada 60 mil ms es un minuto
+    if (ahora - tiempoAnterior >= 60000UL) {
+      tiempoAnterior = ahora;
+      minuto++;
+      if (minuto >= 60) {
+        minuto = 0;
+        hora++;
+        if (hora >= 24) {
+          hora = 0;
+          dias++;
+        }
+      }
+
+      // Imprimir la hora actual
+      Serial.print("Tiempo actual:");
+      if (hora < 10) Serial.print("0");
+      Serial.print(hora);
+      Serial.print(":");
+      if (minuto < 10) Serial.print("0");
+      Serial.print(minuto);
+      Serial.print(" | Día");
+      Serial.println(dias);
+    }
+  }
+
+
+  // Lógica principal
+  void verificiarRiego() {
+    bool activarBomba = false;
+    for (int i = 0; i < 3; i++) {
+      zonas[i].leer();
+      zonas[i].imprimirInfo(i + 1);
+
+      if (zonas[i].tocaRegar(hora, minuto, dias)) {
+        activarBomba = true;
+        zonas[i].registrarRiego(dias);
+      }
+    }
+    if (activarBomba) {
+      Serial.println("Activando bomba...");
+      digitalWrite(pinBomba, HIGH);
+    } else {
+      digitalWrite(pinBomba, LOW);
+      Serial.println("No hace falta regar...");
+    }
+    Serial.println("");
+  }
+
+  SensorHumedad& getZona(int i) {
+    return zonas[i];
+  } 
+
+
+  void iniciar() {
+    pinMode(pinBomba, OUTPUT);
+    digitalWrite(pinBomba, LOW);
+
+    Serial.println("=== CONFIGURACIÓN DEL SISTEMA ===");
+
+    // --- Lectura y validación de la hora ---
+    int horaIngresada = -1;
+    int minutoIngresado = -1;
+
+    do {
+      Serial.print("Ingrese la hora inicial (0-23): ");
+      while (Serial.available() == 0); // espera entrada
+      horaIngresada = Serial.parseInt();
+      while (Serial.available() > 0) Serial.read(); // limpia el buffer
+
+      if (horaIngresada < 0 || horaIngresada > 23) {
+        Serial.println("Hora inválida. Debe ser un número entre 0 y 23.\n");
+      }
+    } while (horaIngresada < 0 || horaIngresada > 23);
+
+    do {
+      Serial.print("Ingres los minutos actuales (0 - 59): ");
+      while (Serial.available() == 0);
+      minutoIngresado = Serial.parseInt();
+      while (Serial.available() > 0) Serial.read();
+      if (minutoIngresado < 0 || minutoIngresado > 59)
+        Serial.println("Minuto inválido. Debe ser un número entre 0 y 59. \n");
+    } while (minutoIngresado < 0 || minutoIngresado > 59);
+
+    configurarHora(horaIngresada, minutoIngresado);
+    Serial.print("Hora inicial guardada: ");
+    Serial.println(hora);
+    Serial.print(":");
+    Serial.println(minuto);
+    Serial.println();
+
+
+    // Configuración por zona
+    for (int i = 0; i < 3; i++) {
+      Serial.print("Configuración de zona");
+      Serial.print(i + 1);
+      Serial.println("");
+
+      bool apagado = false;
+      int opcion = 0;
+      do {
+        Serial.println("¿La zona estará siempre apagada? (1: sí, 0: no): ");
+        while (Serial.available() == 0);
+        opcion = Serial.parseInt();
+        while (Serial.available() > 0) Serial.read();
+        if (opcion != 0 && opcion != 1)
+          Serial.println("Opción inválida, ingrese 1 o 0. \n");
+      } while (opcion != 0 && opcion != 1);
+      apagado = (opcion == 1);
+
+      // Cada cuánto se riega
+      int f = 1;
+      if (!apagado) {
+        do {
+          Serial.print("¿Cada cuántos días se regará? (valor mayor o igual a 1): ");
+          while (Serial.available() == 0);
+          f = Serial.parseInt();
+          while (Serial.available() > 0) Serial.read();
+          if (f < 1)
+            Serial.println("Valor inválido, debe ser mayor o igual a 1");
+        } while (f < 1);
+      }
+
+      //Horario de riego
+      int hI = 0, mI = 0, hF = 0, mF = 0;
+      if (!apagado) {
+        do {
+          Serial.print("Ingrese hora de inicio (0 - 23): ");
+          while (Serial.available() == 0);
+          hI = Serial.parseInt();
+          while (Serial.available() > 0) Serial.read();
+        } while (hI < 0 || hI > 23);
+        Serial.println("");
+
+        do {
+          Serial.print("Ingrese minuto de inicio (0-59): ");
+          while (Serial.available() == 0);
+          mI = Serial.parseInt();
+          while (Serial.available() > 0) Serial.read();
+        } while (mI < 0 || mI > 59);
+        Serial.println("");
+
+        do {
+          Serial.print("Ingrese hora de fin (0-23): ");
+          while (Serial.available() == 0);
+          hF = Serial.parseInt();
+          while (Serial.available() > 0) Serial.read();
+        } while (hF < 0 || hF > 23);
+        Serial.println("");
+
+        do {
+          Serial.print("Ingrese minuto de fin (0-59): ");
+          while (Serial.available() == 0);
+          mF = Serial.parseInt();
+          while (Serial.available() > 0) Serial.read();
+        } while (mF < 0 || mF > 59);
+        Serial.println("");
+        Serial.println("");
+      }
+
+      // Rangos de humedad
+      int minH = 0, maxH = 0;
+      do {
+        Serial.print("Ingrese humedad mínima (0-100): ");
+        while (Serial.available() == 0);
+        minH = Serial.parseInt();
+        while (Serial.available() > 0) Serial.read();
+      } while (minH < 0 || minH > 100);
+      Serial.print(minH);
+      Serial.println("");
+
+      do {
+        Serial.print("Ingrese humedad máxima (0-100): ");
+        while (Serial.available() == 0);
+        maxH = Serial.parseInt();
+        while (Serial.available() > 0) Serial.read();
+      } while (maxH < 0 || maxH > 100 || maxH <= minH);
+      Serial.println(maxH);
+
+      zonas[i].configurarRangos(minH, maxH);
+      zonas[i].configurarRiego(apagado, f, hI, mI, hF, mF);
+
+      Serial.println("✅ Zona configurada correctamente.\n");
+    }
+
+    Serial.println("Configuración completada correctamente.");
+    Serial.println("------------------------------------");
+
+  }
+
+  void actualizarTiempo() {
+    unsigned long tiempoActual = millis();
+
+    // 1 hora = 3600000 ms (tiempo real)
+    if (tiempoActual - tiempoAnterior >= 3600000UL) {
+      tiempoAnterior = tiempoActual;
+      hora++;
+      if (hora % 24 == 0) {
+        dias++;
+      }
+      Serial.print("Hora actual: ");
+      Serial.print(hora % 24);
+      Serial.print(":00  |  Día: ");
+      Serial.println(dias);
+    }
+  }
+
+  void verificarRiego() {
+    bool activarBomba = false;
+
+    for (int i = 0; i < 3; i++) {
+      zonas[i].leer();
+      zonas[i].imprimirInfo(i + 1);
+
+      if (zonas[i].necesitaRiego()) {
+        activarBomba = true;
+      }
+    }
+
+    if (activarBomba) {
+      Serial.println("⚙️ Activando bomba...");
+      digitalWrite(pinBomba, HIGH);
+    } else {
+      digitalWrite(pinBomba, LOW);
+      Serial.println("💧 Humedad suficiente, bomba apagada.");
+    }
+
+    Serial.println("------------------------------------");
+  }
+};
+
+// =========================
+// CONFIGURACIÓN PRINCIPAL
+// =========================
+
+Sistema sistema(8, A0, A1, A2);  // Bomba en pin 8, sensores en A0-A2
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Ingrese la fecha y hora. Primero el mes, luego el día, luego la hora (formato militar), luego los minutos");
+  delay(1000);
+  sistema.iniciar();
 }
 
 void loop() {
-  // Si llega algo por el monitor serial
-  if (Serial.available()) {
-    String entrada = Serial.readStringUntil('\n');
-    entrada.trim();
-
-
-
-    while (dummy_mes) {
-      
-      int mes_prueba;
-      if ((sscanf(entrada.c_str(), "%d", &mes_prueba) == 1) && (0 < mes_prueba && mes_prueba < 13)) {
-        mes = mes_prueba;
-        dummy_mes = false;
-        Serial.println("Mes guardado correctamente");
-        Serial.println();
-        switch (mes) {
-          case 1: case 3: case 5: case 7: case 8: case 10: case 12: max = 32; break;
-          case 2: max = 29; break;
-          case 4: case 6: case 9: case 11: max = 31; break;
-        }
-        Serial.println("Ingrese el día");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      } else {
-        Serial.println("Por favor, ingrese un mes correcto (1 - 12)");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-
-
-
-    while (dummy_dia) {
-      
-      int dia_prueba;
-      if ((sscanf(entrada.c_str(), "%d", &dia_prueba) == 1) && (0 < dia_prueba && dia_prueba < max)) {
-        dia = dia_prueba;
-        dummy_dia = false;
-        Serial.println("Día guardado correctamente");
-        Serial.println();
-        Serial.println("Ingrese la hora");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese un día correcto (1 -");
-        Serial.println(max);
-        Serial.println(")");
-        String entrada = Serial.readStringUntil('\n');
-        return; 
-      }
-    }
-
-
-
-    while (dummy_hora) {
-      
-      int hora_prueba;
-      if ((sscanf(entrada.c_str(), "%d", &hora_prueba) == 1) && (-1 < hora_prueba && hora_prueba < 25)) {
-        hora = hora_prueba;
-        dummy_hora = false;
-        Serial.println("Hora guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese los minutos");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      } else {
-        Serial.println("Por favor, ingrese una hora correcta (1 - 24)");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-
-
-
-    while (dummy_minuto) {
-      
-      int minuto_prueba;
-      if ((sscanf(entrada.c_str(), "%d", &minuto_prueba) == 1) && (-1 < minuto_prueba && minuto_prueba < 60)) {
-        minuto = minuto_prueba;
-        dummy_minuto = false;
-        Serial.println("Minutos guardados correctamente");
-        Serial.println();
-        Serial.println();
-        Serial.println();
-        horaConfigurada = true;
-        startMillis = millis();
-        Serial.println("Ingrese la humedad mínima del sensor 1");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      } else {
-        Serial.println("Por favor, ingrese minutos correctos");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-
-
-
-
-
-
-
-
-
-
-    while (dummy_humedad_min1) {
-      int humedad1A;
-      if ((sscanf(entrada.c_str(), "%d", &humedad1A) == 1) && humedad1A >= 0) {
-        humedad1min = humedad1A;
-        dummy_humedad_min1 = false;
-        Serial.println("Humedad mínima del sensor 1 guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese la humedad máxima del sensor 1");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad mínima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-    while (dummy_humedad_max1) {
-      int humedad1B;
-      if ((sscanf(entrada.c_str(), "%d", &humedad1B) == 1) && humedad1B > humedad1min) {
-        humedad1max = humedad1B;
-        dummy_humedad_max1 = false;
-        Serial.println("Humedad máxima del sensor 1 guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese la humedad mínima del sensor 2");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad máxima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-
-
-
-    while (dummy_humedad_min2) {
-      int humedad2A;
-      if ((sscanf(entrada.c_str(), "%d", &humedad2A) == 1) && humedad2A >= 0) {
-        humedad2min = humedad2A;
-        dummy_humedad_min2 = false;
-        Serial.println("Humedad mínima del sensor 2 guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese la humedad máxima del sensor 2");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad mínima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-    while (dummy_humedad_max1) {
-      int humedad2B;
-      if ((sscanf(entrada.c_str(), "%d", &humedad2B) == 1) && humedad2B > humedad2min) {
-        humedad2max = humedad2B;
-        dummy_humedad_max2 = false;
-        Serial.println("Humedad máxima del sensor 2 guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese la humedad mínima del sensor 3");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad máxima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-
-
-
-    while (dummy_humedad_min3) {
-      int humedad3A;
-      if ((sscanf(entrada.c_str(), "%d", &humedad3A) == 1) && humedad3A >= 0) {
-        humedad3min = humedad3A;
-        dummy_humedad_min3 = false;
-        Serial.println("Humedad mínima del sensor 3 guardada correctamente");
-        Serial.println();
-        Serial.println("Ingrese la humedad máxima del sensor 3");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad mínima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-    while (dummy_humedad_max3) {
-      int humedad3B;
-      if ((sscanf(entrada.c_str(), "%d", &humedad3B) == 1) && humedad3B > humedad3min) {
-        humedad3max = humedad3B;
-        dummy_humedad_max3 = false;
-        Serial.println("Humedad máxima del sensor 3 guardada correctamente");
-        Serial.println();
-        Serial.println("Gracias por ingresar todos los datos necesarios :)");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-
-      } else {
-        Serial.println("Por favor, ingrese una humedad máxima válida");
-        String entrada = Serial.readStringUntil('\n');
-        return;
-      }
-    }
-  }
+  sistema.actualizarTiempo();
+  sistema.verificarRiego();
+  delay(2000); // leer cada 2 segundos
 }
