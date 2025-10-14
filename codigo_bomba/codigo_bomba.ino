@@ -1,5 +1,5 @@
 // --- Configuración de pines ---
-const int pinBomba = 9;   // Pin conectado al Gate del MOSFET
+const int pinBomba = 8;   // Pin conectado al Gate del MOSFET
 
 void setup() {
   Serial.begin(9600);          // Comunicación serial para control manual

@@ -72,22 +72,20 @@ class probLluviaParaArduino:
 #-------> Ejecutar todo 
 
 if __name__ == "__main__":
-    
-    #DESCOMENTAR LO DE PUERTOARDUINO Y SISTEMA PARA EJECUTAR LA TRANSMISIÓN DE DATOS
-    CLAVEAPI = "0816e9b97867497691f44dea8f7263a6" #la key para solicitar los datos, no tocar
-    #PUERTOARDUINO = poner el puerto del arduino aquí y descomentar 
-    
-    #sistema = probLluviaParaArduino(CLAVEAPI, PUERTOARDUINO)
-    #sistema.ejecutar()
-    
-    #PROBAR EN CONSOLA 
+    CLAVEAPI = "0816e9b97867497691f44dea8f7263a6"
+    PUERTOARDUINO = "COM3"  # Cambia al tuyo
+
+    arduino = conexionArduino(PUERTOARDUINO)
     api = climaAPI(CLAVEAPI)
-    probabilidad = api.obtenerClima()
-    if probabilidad is not None:
-        print(f"La probabilidad de lluvia hoy en Cartago es: {probabilidad}%")
-    else:
-        print("No se pudo obtener la probabilidad de lluvia")
-    
 
-
-        
+    while True:
+        if arduino.arduino.in_waiting > 0:
+            mensaje = arduino.arduino.readline().decode('utf-8').strip()
+            if mensaje == "PEDIR_CLIMA":
+                print("Solicitud recibida desde Arduino, obteniendo datos del clima...")
+                probabilidad = api.obtenerClima()
+                if probabilidad is not None:
+                    arduino.enviarDatos(probabilidad)
+                else:
+                    arduino.enviarDatos(-1)
+        time.sleep(1)

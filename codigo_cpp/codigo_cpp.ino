@@ -345,20 +345,70 @@ public:
   }
 };
 
+
+
 // =========================
 // CONFIGURACIÓN PRINCIPAL
 // =========================
 
+
+
 Sistema sistema(8, A0, A1, A2);  // Bomba en pin 8, sensores en A0-A2
+int probLluvia = -1;
+bool climaRecibido = false;
 
 void setup() {
   Serial.begin(9600);
-  delay(1000);
-  sistema.iniciar();
+  while (!Serial) {
+    ; // Espera hasta que el puerto serial esté disponible
+  }
+
+  Serial.println("Arduino iniciado. Solicitando dato del clima...");
+  Serial.println("PEDIR_CLIMA");  // Señal para que Python envíe el dato
 }
 
 void loop() {
-  sistema.actualizarTiempo();
-  sistema.verificarRiego();
-  delay(2000); // leer cada 2 segundos
+  // --- Recepción del dato del clima ---
+  if (Serial.available() > 0) {
+    String dato = Serial.readStringUntil('\n');
+    dato.trim();
+
+    if (dato.length() > 0) {
+      int nuevaProb = dato.toInt();
+
+      if (nuevaProb >= 0 && nuevaProb <= 100) {  // validar
+        probLluvia = nuevaProb;
+        climaRecibido = true;
+
+        Serial.print("Probabilidad de lluvia recibida: ");
+        Serial.print(probLluvia);
+        Serial.println("%");
+        
+        while (Serial.available()) {
+            Serial.read(); // Quita cualquier residuo, como '\n'
+        }
+      }
+    }
+  }
+
+  // --- Cuando se haya recibido el clima, iniciar el sistema ---
+  if (climaRecibido) {
+    Serial.println("Iniciando sistema de riego...");
+    sistema.iniciar();
+
+    // --- Ejecutar lógica de riego solo si no va a llover ---
+    if (probLluvia <= 70) {
+      sistema.actualizarTiempo();
+      sistema.verificarRiego();
+    } else {
+      Serial.println("Alta probabilidad de lluvia, no se activará el riego.");
+    }
+
+    climaRecibido = false;  // Reiniciar bandera para la próxima solicitud
+    delay(3600000);  // Esperar 1 hora antes de volver a pedir clima
+    Serial.println("PEDIR_CLIMA");  // Pedir nuevamente el dato
+  }
+
+  delay(1000); // Esperar un poco antes de revisar de nuevo el puerto
 }
+
