@@ -320,29 +320,45 @@ public:
       Serial.println(dias);
     }
   }
-
   void verificarRiego() {
     bool activarBomba = false;
+    bool horarioActivo = false;
 
     for (int i = 0; i < 3; i++) {
       zonas[i].leer();
       zonas[i].imprimirInfo(i + 1);
 
-      if (zonas[i].necesitaRiego()) {
-        activarBomba = true;
+      int humedad = zonas[i].leerHumedad();
+      if (zonas[i].tocaRegar(hora, minuto, dias)) {
+        horarioActivo = true;
+        if (zonas[i].necesitaRiego()) {
+          activarBomba = true;
+        } else {
+          Serial.print("💧 Zona ");
+          Serial.print(i + 1);
+          Serial.println(": suficiente humedad, no se riega.");
+        }
       }
+    }
+
+    if (!horarioActivo) {
+      Serial.println("🕐 No es horario de riego para ninguna zona.");
     }
 
     if (activarBomba) {
       Serial.println("⚙️ Activando bomba...");
       digitalWrite(pinBomba, HIGH);
-    } else {
+    } else if (horarioActivo) {
+      Serial.println("💧 No hace falta activar la bomba, humedad suficiente.");
       digitalWrite(pinBomba, LOW);
-      Serial.println("💧 Humedad suficiente, bomba apagada.");
+    } else {
+      Serial.println("⏹️ Bomba apagada (fuera de horario o zonas inactivas).");
+      digitalWrite(pinBomba, LOW);
     }
 
     Serial.println("------------------------------------");
   }
+
 };
 
 
@@ -380,12 +396,12 @@ void loop() {
         probLluvia = nuevaProb;
         climaRecibido = true;
 
-        Serial.print("Probabilidad de lluvia recibida: ");
+        Serial.print("🌦️ Probabilidad de lluvia recibida: ");
         Serial.print(probLluvia);
         Serial.println("%");
         
         while (Serial.available()) {
-            Serial.read(); // Quita cualquier residuo, como '\n'
+            Serial.read(); // Quita cualquier residuo
         }
       }
     }
@@ -393,22 +409,23 @@ void loop() {
 
   // --- Cuando se haya recibido el clima, iniciar el sistema ---
   if (climaRecibido) {
-    Serial.println("Iniciando sistema de riego...");
+    Serial.println("🚀 Iniciando sistema de riego...");
     sistema.iniciar();
 
-    // --- Ejecutar lógica de riego solo si no va a llover ---
-    if (probLluvia <= 70) {
+    if (probLluvia > 70) {
+      Serial.println("🌧️ Alta probabilidad de lluvia, no se activará el riego.");
+    } else {
+      // Ejecutar lógica de riego
       sistema.actualizarTiempo();
       sistema.verificarRiego();
-    } else {
-      Serial.println("Alta probabilidad de lluvia, no se activará el riego.");
     }
 
-    climaRecibido = false;  // Reiniciar bandera para la próxima solicitud
+    climaRecibido = false;  // Reiniciar bandera
     delay(3600000);  // Esperar 1 hora antes de volver a pedir clima
     Serial.println("PEDIR_CLIMA");  // Pedir nuevamente el dato
   }
 
-  delay(1000); // Esperar un poco antes de revisar de nuevo el puerto
+  delay(1000); // Esperar antes de revisar de nuevo el puerto
 }
+
 
