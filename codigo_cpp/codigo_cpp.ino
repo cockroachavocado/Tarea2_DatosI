@@ -1,28 +1,49 @@
+// =======================================================
+// SISTEMA DE RIEGO AUTOMÁTICO + CLIMA (versión final)
+// Sin repeticiones de PEDIR_CLIMA, con hora correcta y
+// actualización continua de estados de humedad.
+// =======================================================
 
-// Clase para los sensores
+
+// --------------------- CLASE SENSOR ---------------------
 class SensorHumedad {
   int pin;
   int humedadMin;
   int humedadMax;
   int valorActual;
 
-  // para la configuración de riego
   bool apagado;
   int cadaCuantosDias;
   int horaInicio;
   int minutosInicio;
   int horaFinal;
   int minutosFinal;
-  
-  // no sé qué significa esto xd, parece ser una referencia de último riego
+
   unsigned long ultimoRiego;
 
 public:
+  // ----- MÉTODOS GETTER -----
+  int getDias() { return cadaCuantosDias; }
+  int getHoraInicio() { return horaInicio; }
+  int getHoraFinal() { return horaFinal; }
+  int getMinInicio() { return minutosInicio; }
+  int getMinFinal() { return minutosFinal; }
+  int getMinHumedad() { return humedadMin; }
+  int getMaxHumedad() { return humedadMax; }
+  bool getApagado() { return apagado; }
+
   SensorHumedad(int pinSensor = A0) {
     pin = pinSensor;
     humedadMin = 0;
     humedadMax = 100;
     valorActual = 0;
+    apagado = false;
+    cadaCuantosDias = 1;
+    horaInicio = 0;
+    minutosInicio = 0;
+    horaFinal = 0;
+    minutosFinal = 0;
+    ultimoRiego = 0;
   }
 
   void configurarRangos(int minH, int maxH) {
@@ -30,22 +51,23 @@ public:
     humedadMax = maxH;
   }
 
-  void configurarRiego(bool a, int d, int h1, int h2, int m1, int m2) {
+  void configurarRiego(bool a, int d, int h1, int m1, int h2, int m2) {
     apagado = a;
     cadaCuantosDias = d;
     horaInicio = h1;
-    horaFinal = h2;
     minutosInicio = m1;
+    horaFinal = h2;
     minutosFinal = m2;
   }
 
   void leer() {
     valorActual = analogRead(pin);
-    // Se covnierte la lectura (0-1023) a porcentaje (0-100)
-    valorActual = map(valorActual, 0, 1023, 100, 0);
+    valorActual = map(valorActual, 0, 1023, 100, 0); // convierte a porcentaje
   }
 
   int leerHumedad() { return valorActual; }
+  int getMin() { return humedadMin; }
+  int getMax() { return humedadMax; }
 
   bool necesitaRiego() {
     return valorActual < humedadMin;
@@ -56,38 +78,39 @@ public:
   }
 
   bool tocaRegar(int hora, int minutos, int dia) {
-    if (apagado) return false;
-    if ((dia - ultimoRiego) % cadaCuantosDias != 0) return false;
+    if (apagado) {
+      return false;
+    }
+    if ((dia - ultimoRiego) % cadaCuantosDias != 0) {
+      return false;
+    }
+    int tiempoActual = hora * 60 + minutos;
+    int tiempoInicio = horaInicio * 60 + minutosInicio;
+    int tiempoFin = horaFinal * 60 + minutosFinal;
 
-    //compara la hora actual con un rango programado
-    if (hora > horaInicio || (hora == horaInicio && minutos >= minutosInicio)) {
-      if (hora < horaFinal || (hora == horaFinal && minutos <= minutosFinal)) {
-        if (necesitaRiego()) {
-          return true;
-        }
+    // Si el rango NO cruza de día (ej: 8:00 a 18:00)
+    if (tiempoInicio <= tiempoFin) {
+      if (tiempoActual >= tiempoInicio && tiempoActual <= tiempoFin) {
+        return true;
       }
     }
+    // Si el rango SÍ cruza de día (ej: 22:00 a 2:00)
+    else {
+      if (tiempoActual >= tiempoInicio || tiempoActual <= tiempoFin) {
+        return true;
+      }
+    }
+
     return false;
   }
 
   void registrarRiego(int dia) {
     ultimoRiego = dia;
   }
-
-  void imprimirInfo(int id) {
-    Serial.print("Zona ");
-    Serial.print(id);
-    Serial.print(": ");
-    Serial.print(valorActual);
-    Serial.println("% | Rango: ");
-    Serial.print(humedadMin);
-    Serial.print("-");
-    Serial.print(humedadMax);
-    Serial.println("%");
-  }
 };
 
-// Clase del sistema como tal
+
+// --------------------- CLASE SISTEMA ---------------------
 class Sistema {
   SensorHumedad zonas[3];
   int pinBomba;
@@ -97,8 +120,8 @@ class Sistema {
   unsigned long tiempoAnterior;
 
 public:
-  Sistema(int p, int a, int b, int c) 
-    : pinBomba(p), 
+  Sistema(int p, int a, int b, int c)
+    : pinBomba(p),
       zonas{SensorHumedad(a), SensorHumedad(b), SensorHumedad(c)} {
     hora = 0;
     minuto = 0;
@@ -106,7 +129,12 @@ public:
     tiempoAnterior = millis();
   }
 
-  // Configuración de la hora
+  void preparar() {
+    pinMode(pinBomba, OUTPUT);
+    digitalWrite(pinBomba, LOW);
+    Serial.println("=== CONFIGURACIÓN DEL SISTEMA ===");
+  }
+
   void configurarHora(int h, int m) {
     hora = h;
     minuto = m;
@@ -115,8 +143,7 @@ public:
   void actualizarHora() {
     unsigned long ahora = millis();
 
-    // Cada 60 mil ms es un minuto
-    if (ahora - tiempoAnterior >= 60000UL) {
+    if (ahora - tiempoAnterior >= 60000UL) {  // 1 minuto real
       tiempoAnterior = ahora;
       minuto++;
       if (minuto >= 60) {
@@ -127,305 +154,240 @@ public:
           dias++;
         }
       }
-
-      // Imprimir la hora actual
-      Serial.print("Tiempo actual:");
-      if (hora < 10) Serial.print("0");
-      Serial.print(hora);
-      Serial.print(":");
-      if (minuto < 10) Serial.print("0");
-      Serial.print(minuto);
-      Serial.print(" | Día");
-      Serial.println(dias);
     }
   }
 
-
-  // Lógica principal
-  void verificiarRiego() {
+  void verificarRiego() {
     bool activarBomba = false;
+
+    Serial.print("📨 Hora actual: ");
+    if (hora < 10) Serial.print("0");
+    Serial.print(hora);
+    Serial.print(":");
+    if (minuto < 10) Serial.print("0");
+    Serial.println(minuto);
+    Serial.println("------------------------------------");
+
     for (int i = 0; i < 3; i++) {
       zonas[i].leer();
-      zonas[i].imprimirInfo(i + 1);
+      int humedad = zonas[i].leerHumedad();
 
-      if (zonas[i].tocaRegar(hora, minuto, dias)) {
-        activarBomba = true;
-        zonas[i].registrarRiego(dias);
+      Serial.print("📨 Zona ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(humedad);
+      Serial.print("% | Rango: ");
+      Serial.print(zonas[i].getMin());
+      Serial.print("-");
+      Serial.print(zonas[i].getMax());
+      Serial.print("%  ");
+
+      if (zonas[i].necesitaRiego()) {
+        Serial.println("(💧 Necesita riego)");
+        digitalWrite(pinBomba, HIGH);
+      } else if (zonas[i].tocaRegar(hora, minuto, dias)) {
+        Serial.println("(💧 Toca riego)");
+        digitalWrite(pinBomba, HIGH);
+      } else if (zonas[i].excesoHumedad()) {
+        digitalWrite(pinBomba, LOW);
+        Serial.println("(💦 Exceso de humedad)");
+      } else {
+        digitalWrite(pinBomba, LOW);
+        Serial.println("(OK)");
       }
     }
-    if (activarBomba) {
-      Serial.println("Activando bomba...");
-      digitalWrite(pinBomba, HIGH);
-    } else {
-      digitalWrite(pinBomba, LOW);
-      Serial.println("No hace falta regar...");
-    }
-    Serial.println("");
+    Serial.println("------------------------------------");
   }
 
   SensorHumedad& getZona(int i) {
     return zonas[i];
-  } 
-
+  }
 
   void iniciar() {
-    pinMode(pinBomba, OUTPUT);
-    digitalWrite(pinBomba, LOW);
-
-    Serial.println("=== CONFIGURACIÓN DEL SISTEMA ===");
-
-    // --- Lectura y validación de la hora ---
-    int horaIngresada = -1;
-    int minutoIngresado = -1;
-
-    do {
-      Serial.print("Ingrese la hora inicial (0-23): ");
-      while (Serial.available() == 0); // espera entrada
-      horaIngresada = Serial.parseInt();
-      while (Serial.available() > 0) Serial.read(); // limpia el buffer
-
-      if (horaIngresada < 0 || horaIngresada > 23) {
-        Serial.println("Hora inválida. Debe ser un número entre 0 y 23.\n");
-      }
-    } while (horaIngresada < 0 || horaIngresada > 23);
-
-    do {
-      Serial.print("Ingres los minutos actuales (0 - 59): ");
-      while (Serial.available() == 0);
-      minutoIngresado = Serial.parseInt();
-      while (Serial.available() > 0) Serial.read();
-      if (minutoIngresado < 0 || minutoIngresado > 59)
-        Serial.println("Minuto inválido. Debe ser un número entre 0 y 59. \n");
-    } while (minutoIngresado < 0 || minutoIngresado > 59);
-
-    configurarHora(horaIngresada, minutoIngresado);
-    Serial.print("Hora inicial guardada: ");
-    Serial.println(hora);
-    Serial.print(":");
-    Serial.println(minuto);
-    Serial.println();
-
-
-    // Configuración por zona
-    for (int i = 0; i < 3; i++) {
-      Serial.print("Configuración de zona");
-      Serial.print(i + 1);
-      Serial.println("");
-
-      bool apagado = false;
-      int opcion = 0;
-      do {
-        Serial.println("¿La zona estará siempre apagada? (1: sí, 0: no): ");
-        while (Serial.available() == 0);
-        opcion = Serial.parseInt();
-        while (Serial.available() > 0) Serial.read();
-        if (opcion != 0 && opcion != 1)
-          Serial.println("Opción inválida, ingrese 1 o 0. \n");
-      } while (opcion != 0 && opcion != 1);
-      apagado = (opcion == 1);
-
-      // Cada cuánto se riega
-      int f = 1;
-      if (!apagado) {
-        do {
-          Serial.print("¿Cada cuántos días se regará? (valor mayor o igual a 1): ");
-          while (Serial.available() == 0);
-          f = Serial.parseInt();
-          while (Serial.available() > 0) Serial.read();
-          if (f < 1)
-            Serial.println("Valor inválido, debe ser mayor o igual a 1");
-        } while (f < 1);
-      }
-
-      //Horario de riego
-      int hI = 0, mI = 0, hF = 0, mF = 0;
-      if (!apagado) {
-        do {
-          Serial.print("Ingrese hora de inicio (0 - 23): ");
-          while (Serial.available() == 0);
-          hI = Serial.parseInt();
-          while (Serial.available() > 0) Serial.read();
-        } while (hI < 0 || hI > 23);
-        Serial.println("");
-
-        do {
-          Serial.print("Ingrese minuto de inicio (0-59): ");
-          while (Serial.available() == 0);
-          mI = Serial.parseInt();
-          while (Serial.available() > 0) Serial.read();
-        } while (mI < 0 || mI > 59);
-        Serial.println("");
-
-        do {
-          Serial.print("Ingrese hora de fin (0-23): ");
-          while (Serial.available() == 0);
-          hF = Serial.parseInt();
-          while (Serial.available() > 0) Serial.read();
-        } while (hF < 0 || hF > 23);
-        Serial.println("");
-
-        do {
-          Serial.print("Ingrese minuto de fin (0-59): ");
-          while (Serial.available() == 0);
-          mF = Serial.parseInt();
-          while (Serial.available() > 0) Serial.read();
-        } while (mF < 0 || mF > 59);
-        Serial.println("");
-        Serial.println("");
-      }
-
-      // Rangos de humedad
-      int minH = 0, maxH = 0;
-      do {
-        Serial.print("Ingrese humedad mínima (0-100): ");
-        while (Serial.available() == 0);
-        minH = Serial.parseInt();
-        while (Serial.available() > 0) Serial.read();
-      } while (minH < 0 || minH > 100);
-      Serial.print(minH);
-      Serial.println("");
-
-      do {
-        Serial.print("Ingrese humedad máxima (0-100): ");
-        while (Serial.available() == 0);
-        maxH = Serial.parseInt();
-        while (Serial.available() > 0) Serial.read();
-      } while (maxH < 0 || maxH > 100 || maxH <= minH);
-      Serial.println(maxH);
-
-      zonas[i].configurarRangos(minH, maxH);
-      zonas[i].configurarRiego(apagado, f, hI, mI, hF, mF);
-
-      Serial.println("✅ Zona configurada correctamente.\n");
-    }
-
-    Serial.println("Configuración completada correctamente.");
-    Serial.println("------------------------------------");
-
+    // Aquí el Arduino recibe los datos enviados desde Python.
+    // No se escribe nada aquí manualmente; Python controla la entrada.
   }
-
-  void actualizarTiempo() {
-    unsigned long tiempoActual = millis();
-
-    // 1 hora = 3600000 ms (tiempo real)
-    if (tiempoActual - tiempoAnterior >= 3600000UL) {
-      tiempoAnterior = tiempoActual;
-      hora++;
-      if (hora % 24 == 0) {
-        dias++;
-      }
-      Serial.print("Hora actual: ");
-      Serial.print(hora % 24);
-      Serial.print(":00  |  Día: ");
-      Serial.println(dias);
-    }
-  }
-  void verificarRiego() {
-    bool activarBomba = false;
-    bool horarioActivo = false;
-
-    for (int i = 0; i < 3; i++) {
-      zonas[i].leer();
-      zonas[i].imprimirInfo(i + 1);
-
-      int humedad = zonas[i].leerHumedad();
-      if (zonas[i].tocaRegar(hora, minuto, dias)) {
-        horarioActivo = true;
-        if (zonas[i].necesitaRiego()) {
-          activarBomba = true;
-        } else {
-          Serial.print("💧 Zona ");
-          Serial.print(i + 1);
-          Serial.println(": suficiente humedad, no se riega.");
-        }
-      }
-    }
-
-    if (!horarioActivo) {
-      Serial.println("🕐 No es horario de riego para ninguna zona.");
-    }
-
-    if (activarBomba) {
-      Serial.println("⚙️ Activando bomba...");
-      digitalWrite(pinBomba, HIGH);
-    } else if (horarioActivo) {
-      Serial.println("💧 No hace falta activar la bomba, humedad suficiente.");
-      digitalWrite(pinBomba, LOW);
-    } else {
-      Serial.println("⏹️ Bomba apagada (fuera de horario o zonas inactivas).");
-      digitalWrite(pinBomba, LOW);
-    }
-
-    Serial.println("------------------------------------");
-  }
-
 };
 
 
-
-// =========================
-// CONFIGURACIÓN PRINCIPAL
-// =========================
-
-
-
-Sistema sistema(8, A0, A1, A2);  // Bomba en pin 8, sensores en A0-A2
+// --------------------- VARIABLES GLOBALES ---------------------
+Sistema sistema(8, A0, A1, A2);
+int estado = 0;
+int data;
 int probLluvia = -1;
 bool climaRecibido = false;
+bool configurado = false;
+bool climaSolicitado = false;
 
+bool horaSolicitada = false;
+bool horaConfigurada = false;
+bool minutosSolicitados = false;
+bool s1c = false;
+bool s2c = false;
+bool s3c = false;
+
+bool s1activo = false;
+bool s1d = false;
+bool sensor1min = false;
+bool sensor1max = false;
+bool horaS1A = false;
+bool minS1A= false;
+bool horaS1B = false;
+bool minS1B = false;
+
+bool s2activo = false;
+bool s2d = false;
+bool sensor2min = false;
+bool sensor2max = false;
+bool horaS2A = false;
+bool minS2A= false;
+bool horaS2B = false;
+bool minS2B = false;
+
+bool s3activo = false;
+bool s3d = false;
+bool sensor3min = false;
+bool sensor3max = false;
+bool horaS3A = false;
+bool minS3A= false;
+bool horaS3B = false;
+bool minS3B = false;
+
+int hora, mins, min, max;
+
+unsigned long ultimaVerificacion = 0;
+unsigned long ultimaPeticionClima = 0;
+
+
+
+// --------------------- SETUP ---------------------
 void setup() {
   Serial.begin(9600);
-  while (!Serial) {
-    ; // Espera hasta que el puerto serial esté disponible
-  }
-
-  Serial.println("Arduino iniciado. Solicitando dato del clima...");
-  Serial.println("PEDIR_CLIMA");  // Señal para que Python envíe el dato
+  while (!Serial) { ; }
+  Serial.println("Arduino iniciado. Esperando configuración...");
 }
 
+// --------------------- LOOP PRINCIPAL ---------------------
 void loop() {
-  // --- Recepción del dato del clima ---
+  unsigned long ahora = millis();
+
+  // --- Leer datos desde Python ---
   if (Serial.available() > 0) {
-    String dato = Serial.readStringUntil('\n');
-    dato.trim();
+    int dato = Serial.parseInt();
 
-    if (dato.length() > 0) {
-      int nuevaProb = dato.toInt();
-
-      if (nuevaProb >= 0 && nuevaProb <= 100) {  // validar
-        probLluvia = nuevaProb;
+    if (estado == 0) { 
+      // ====== 1️⃣ CLIMA ======
+      if (dato >= 0 && dato <= 100) {
+        probLluvia = dato;
         climaRecibido = true;
-
+        climaSolicitado = false;
         Serial.print("🌦️ Probabilidad de lluvia recibida: ");
         Serial.print(probLluvia);
         Serial.println("%");
-        
-        while (Serial.available()) {
-            Serial.read(); // Quita cualquier residuo
-        }
+        Serial.println("------------------------------------");
+        estado = 1;
+      }
+    }
+
+    else if (estado == 1) { 
+      // ====== 2️⃣ HORA ======
+      hora = dato;
+      while (!Serial.available()) ;  // esperar minutos
+      mins = Serial.parseInt();
+      sistema.configurarHora(hora, mins);
+      horaConfigurada = true;
+      Serial.print("🕒 Hora inicial: ");
+      Serial.print(hora);
+      Serial.print(":");
+      Serial.println(mins);
+      estado = 2;
+    }
+
+    else if (estado == 2) {
+      // ====== 3️⃣ ZONA 1 ======
+      static int datosZona[8];
+      static int index = 0;
+      datosZona[index++] = dato;
+
+      if (index == 8) {
+        sistema.getZona(0).configurarRiego(
+          datosZona[0], datosZona[1], datosZona[2], datosZona[3],
+          datosZona[4], datosZona[5]);
+        sistema.getZona(0).configurarRangos(datosZona[6], datosZona[7]);
+        Serial.println("✅ Zona 1 configurada correctamente.");
+        index = 0;
+        estado = 3;
+      }
+      Serial.print("Zona configurada: apagado=");
+      Serial.print(datosZona[0]);
+      Serial.print(", dias=");
+      Serial.print(datosZona[1]);
+      Serial.print(", horaInicio=");
+      Serial.print(datosZona[2]);
+      Serial.print(", horaFin=");
+      Serial.print(datosZona[3]);
+      Serial.print(", minInicio=");
+      Serial.print(datosZona[4]);
+      Serial.print(", minFin=");
+      Serial.println(datosZona[5]);
+    }
+
+    else if (estado == 3) {
+      // ====== 4️⃣ ZONA 2 ======
+      static int datosZona[8];
+      static int index = 0;
+      datosZona[index++] = dato;
+
+      if (index == 8) {
+        sistema.getZona(1).configurarRiego(
+          datosZona[0], datosZona[1], datosZona[2], datosZona[3],
+          datosZona[4], datosZona[5]);
+        sistema.getZona(1).configurarRangos(datosZona[6], datosZona[7]);
+        Serial.println("✅ Zona 2 configurada correctamente.");
+        index = 0;
+        estado = 4;
+      }
+    }
+
+    else if (estado == 4) {
+      // ====== 5️⃣ ZONA 3 ======
+      static int datosZona[8];
+      static int index = 0;
+      datosZona[index++] = dato;
+
+      if (index == 8) {
+        sistema.getZona(2).configurarRiego(
+          datosZona[0], datosZona[1], datosZona[2], datosZona[3],
+          datosZona[4], datosZona[5]);
+        sistema.getZona(2).configurarRangos(datosZona[6], datosZona[7]);
+        Serial.println("✅ Zona 3 configurada correctamente.");
+        index = 0;
+        estado = 5;
+        Serial.println("✅ Configuración completa.");
       }
     }
   }
 
-  // --- Cuando se haya recibido el clima, iniciar el sistema ---
-  if (climaRecibido) {
-    Serial.println("🚀 Iniciando sistema de riego...");
-    sistema.iniciar();
-
-    if (probLluvia > 70) {
-      Serial.println("🌧️ Alta probabilidad de lluvia, no se activará el riego.");
-    } else {
-      // Ejecutar lógica de riego
-      sistema.actualizarTiempo();
-      sistema.verificarRiego();
-    }
-
-    climaRecibido = false;  // Reiniciar bandera
-    delay(3600000);  // Esperar 1 hora antes de volver a pedir clima
-    Serial.println("PEDIR_CLIMA");  // Pedir nuevamente el dato
+  // --- Pedir clima una vez por hora ---
+  if (estado == 0 && !climaSolicitado && 
+      (ultimaPeticionClima == 0 || (millis() - ultimaPeticionClima >= 3600000UL))) {
+    Serial.println("PEDIR_CLIMA");
+    ultimaPeticionClima = millis();
+    climaSolicitado = true;
   }
 
-  delay(1000); // Esperar antes de revisar de nuevo el puerto
+  // --- Verificar riego cada 10 s ---
+  if (estado == 5 && climaRecibido && (ahora - ultimaVerificacion >= 10000UL)) {
+    ultimaVerificacion = ahora;
+
+    if (probLluvia > 90) {
+      Serial.println("🌧️ Alta probabilidad de lluvia, no se activará el riego.");
+      digitalWrite(8, LOW);
+    } else {
+      sistema.actualizarHora();
+      sistema.verificarRiego();
+    }
+  }
+
+  delay(200);
 }
-
-

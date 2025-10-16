@@ -25,120 +25,81 @@ class ClimaAPI:
             print("Error al conectar con la API:", e)
             return None
 
+import serial
+import time
 
-# ---------------------- CLASE CONEXIÓN ARDUINO ----------------------
-class ConexionArduino:
-    def __init__(self, puerto, baudios=9600):
-        try:
-            self.arduino = serial.Serial(puerto, baudios, timeout=2)
-            time.sleep(2)
-            print(f"✅ Conectado al Arduino en {puerto}")
-        except Exception as e:
-            print("❌ No se pudo conectar al Arduino:", e)
-            self.arduino = None
+# -------------------- CONFIGURACIÓN --------------------
+puerto = "COM3"  # cámbialo si tu Arduino usa otro
+baud = 9600
+arduino = serial.Serial(puerto, baud, timeout=1)
+time.sleep(2)
 
-    def enviar(self, dato):
-        """Envía un valor (como texto) al Arduino"""
-        if self.arduino:
-            self.arduino.write(f"{dato}\n".encode("utf-8"))
-            print("➡️ Enviado:", dato)
-            time.sleep(0.5)
+print("🌿 MONITOR DEL SISTEMA DE RIEGO - Python <-> Arduino 🌿")
+print("--------------------------------------------------------")
 
-    def leer_linea(self):
-        """Lee una línea completa del puerto serial"""
-        if self.arduino and self.arduino.in_waiting > 0:
-            return self.arduino.readline().decode("utf-8", errors="ignore").strip()
-        return None
+# Datos fijos (puedes pedirlos con input() si prefieres)
+hora = int(input("Hora actual (0-23): "))
+mins = int(input("Minutos actuales (0-59): "))
 
+# Datos para tres zonas
+zonas = []
+for i in range(3):
+    print(f"\n=== Zona {i+1} ===")
+    apagado = int(input("¿Zona apagada? (1 sí / 0 no): "))
+    if apagado == 0:
+        dias = int(input("¿Cada cuántos días se riega?: "))
+        hIni = int(input("Hora de inicio (0-23): "))
+        mIni = int(input("Minuto de inicio (0-59): "))
+        hFin = int(input("Hora de fin (0-23): "))
+        mFin = int(input("Minuto de fin (0-59): "))
+    else:
+        dias = hIni = mIni = hFin = mFin = 0
+    hMin = int(input("Humedad mínima (0-100): "))
+    hMax = int(input("Humedad máxima (0-100, >min): "))
 
-# ---------------------- FUNCIÓN PARA CONFIGURAR SISTEMA ----------------------
-def configurar_sistema(arduino):
-    print("\n🧠 Iniciando configuración del sistema...")
+    zonas.append([apagado, dias, hIni, mIni, hFin, mFin, hMin, hMax])
 
-    # Hora actual
-    hora = int(input("Ingrese hora actual (0-23): "))
-    arduino.enviar(hora)
+# --------------------------------------------------------
 
-    minuto = int(input("Ingrese minutos actuales (0-59): "))
-    arduino.enviar(minuto)
+def enviar(valor):
+    arduino.write(f"{valor}\n".encode())
+    print(f"➡️ Enviado: {valor}")
+    time.sleep(0.3)
 
-    # Configuración de las 3 zonas
-    for i in range(1, 4):
-        print(f"\n=== Zona {i} ===")
-
-        apagado = int(input("¿Zona apagada? (1: sí, 0: no): "))
-        arduino.enviar(apagado)
-
-        if apagado == 0:
-            dias = int(input("¿Cada cuántos días se riega?: "))
-            arduino.enviar(dias)
-
-            hora_inicio = int(input("Hora de inicio (0-23): "))
-            arduino.enviar(hora_inicio)
-
-            minuto_inicio = int(input("Minuto de inicio (0-59): "))
-            arduino.enviar(minuto_inicio)
-
-            hora_fin = int(input("Hora de fin (0-23): "))
-            arduino.enviar(hora_fin)
-
-            minuto_fin = int(input("Minuto de fin (0-59): "))
-            arduino.enviar(minuto_fin)
+# --------------------------------------------------------
 
 
-        humedad_min = int(input("Humedad mínima (0-100): "))
-        arduino.enviar(humedad_min)
-
-        humedad_max = int(input("Humedad máxima (0-100, > mínima): "))
-        arduino.enviar(humedad_max)
-
-    print("\n✅ Configuración enviada al Arduino correctamente.\n")
+CLAVE_API = "a97765407e894bc1ae4d2d7dee85fdd7"
+PUERTO = "COM3"
+clima = ClimaAPI(CLAVE_API)
+prob = clima.obtener_probabilidad()
 
 
-# ---------------------- FUNCIÓN MONITOR DE ESTADO ----------------------
-def mostrar_estado(lineas):
-    """Despliega en pantalla el estado actual del sistema"""
-    os.system("cls" if os.name == "nt" else "clear")  # limpia pantalla
-    print("🌿 MONITOR DEL SISTEMA DE RIEGO - Python <-> Arduino 🌿")
-    print("--------------------------------------------------------")
-    for l in lineas[-20:]:  # mostrar solo las últimas 20 líneas
-        print(l)
-    print("--------------------------------------------------------")
-    print("Presiona Ctrl+C para detener.\n")
+try:
+    while True:
+        if arduino.in_waiting > 0:
+            msg = arduino.readline().decode(errors='ignore').strip()
+            if msg:
+                print("📨", msg)
 
+            # 1️⃣ Cuando Arduino pide el clima
+            if "PEDIR_CLIMA" in msg:
+                enviar(prob)
 
-# ---------------------- PROGRAMA PRINCIPAL ----------------------
-if __name__ == "__main__":
-    CLAVE_API = "0816e9b97867497691f44dea8f7263a6"
-    PUERTO = "COM3"  # Cambia según tu PC
+            # 2️⃣ Cuando confirma haber recibido el clima
+            elif "Probabilidad de lluvia recibida" in msg:
+                enviar(hora)
+                enviar(mins)
+                print("🕒 Hora enviada.")
+                for i, z in enumerate(zonas):
+                    print(f"🌱 Enviando zona {i+1}...")
+                    for valor in z:
+                        enviar(valor)
+                print("✅ Configuración enviada al Arduino correctamente.")
+                print("--------------------------------------------------------")
 
-    clima = ClimaAPI(CLAVE_API)
-    arduino = ConexionArduino(PUERTO)
-    historial = []  # guarda las últimas líneas del estado
+        time.sleep(0.1)
 
-    print("\n💻 Esperando mensajes del Arduino...\n")
-
-    try:
-        while True:
-            linea = arduino.leer_linea()
-            if linea:
-                historial.append(f"📨 {linea}")
-
-                # --- Detecta eventos ---
-                if "PEDIR_CLIMA" in linea:
-                    prob = clima.obtener_probabilidad()
-                    if prob is None:
-                        prob = -1
-                    arduino.enviar(prob)
-                    historial.append(f"➡️ Enviada probabilidad: {prob}%")
-
-                elif "=== CONFIGURACIÓN DEL SISTEMA ===" in linea:
-                    configurar_sistema(arduino)
-
-                # Mostrar siempre el estado actualizado
-                mostrar_estado(historial)
-
-            time.sleep(0.1)
-
-    except KeyboardInterrupt:
-        print("\n🛑 Programa detenido manualmente.")
+except KeyboardInterrupt:
+    print("\n🛑 Programa detenido manualmente.")
+    arduino.close()
