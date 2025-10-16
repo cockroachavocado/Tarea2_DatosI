@@ -1,0 +1,18 @@
+Integrantes del equipo: 
+Esteban Mauricio López Brenes 
+Kristel Valverde Gómez 
+Ricky Wu Yan 
+
+Nombre del trabajo: Sistema de riego inteligente
+
+======> Contenido del repositorio <======
+Archivos principales del sistema: 
+1. codigo_cpp.ino -> código del Arduino
+2. datosClima.py -> consulta de la API y pasar información al Arduino
+
+Archivos de prubas: 
+codigo_bomba
+
+Archivos de git: 
+.gitignore 
+.gitattributes
