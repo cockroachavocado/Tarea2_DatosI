@@ -130,8 +130,6 @@ public:
   }
 
   void preparar() {
-    pinMode(pinBomba, OUTPUT);
-    digitalWrite(pinBomba, LOW);
     Serial.println("=== CONFIGURACIÓN DEL SISTEMA ===");
   }
 
@@ -182,30 +180,38 @@ public:
       Serial.print(zonas[i].getMax());
       Serial.print("%  ");
 
+      // --- Evaluar condiciones de riego ---
       if (zonas[i].necesitaRiego()) {
         Serial.println("(💧 Necesita riego)");
-        digitalWrite(pinBomba, HIGH);
-      } else if (zonas[i].tocaRegar(hora, minuto, dias)) {
-        Serial.println("(💧 Toca riego)");
-        digitalWrite(pinBomba, HIGH);
-      } else if (zonas[i].excesoHumedad()) {
-        digitalWrite(pinBomba, LOW);
+        activarBomba = true;
+      }
+      else if (zonas[i].tocaRegar(hora, minuto, dias)) {
+        Serial.println("(🕒 Toca riego)");
+        activarBomba = true;
+      }
+      else if (zonas[i].excesoHumedad()) {
         Serial.println("(💦 Exceso de humedad)");
-      } else {
-        digitalWrite(pinBomba, LOW);
+      }
+      else {
         Serial.println("(OK)");
       }
     }
+
+    // --- Encender o apagar bomba al final ---
+    if (activarBomba) {
+      Serial.println("⚙️ Activando bomba...");
+      digitalWrite(pinBomba, HIGH);
+    } else {
+      Serial.println("💧 Bomba apagada.");
+      digitalWrite(pinBomba, LOW);
+    }
+
     Serial.println("------------------------------------");
   }
 
+
   SensorHumedad& getZona(int i) {
     return zonas[i];
-  }
-
-  void iniciar() {
-    // Aquí el Arduino recibe los datos enviados desde Python.
-    // No se escribe nada aquí manualmente; Python controla la entrada.
   }
 };
 
@@ -264,6 +270,8 @@ unsigned long ultimaPeticionClima = 0;
 void setup() {
   Serial.begin(9600);
   while (!Serial) { ; }
+  pinMode(8, OUTPUT);
+  digitalWrite(8, LOW);
   Serial.println("Arduino iniciado. Esperando configuración...");
 }
 
@@ -380,7 +388,7 @@ void loop() {
   if (estado == 5 && climaRecibido && (ahora - ultimaVerificacion >= 10000UL)) {
     ultimaVerificacion = ahora;
 
-    if (probLluvia > 90) {
+    if (probLluvia > 70) {
       Serial.println("🌧️ Alta probabilidad de lluvia, no se activará el riego.");
       digitalWrite(8, LOW);
     } else {
